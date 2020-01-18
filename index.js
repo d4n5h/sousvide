@@ -85,7 +85,7 @@ fs.readFile('./conf.json', async (err, config) => {
         // Relay configuration
         const relay = new five.Relay({
             pin: 10,
-            type: 'NO'
+            type: 'NC'
         });
 
         rly = relay;
