@@ -188,6 +188,10 @@ fs.readFile('./conf.json', async (err, config) => {
                 idle: idleTemp,
                 current: currentTemp
             });
+            clnt.broadcast.emit('tempData', {
+                idle: idleTemp,
+                current: currentTemp
+            });
         }
 
         if (predictionLog.length > 30) {
