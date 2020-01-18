@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <link rel="shortcut icon" type="image/x-icon" href="/icon.ico" />
+    <title>Sous Vide Admin Panel</title>
+
+    <!-- Bootstrap -->
+    <link href="node_modules/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="node_modules/font-awesome/css/font-awesome.min.css" rel="stylesheet">
+    <link href="node_modules/animate.css/animate.min.css" rel="stylesheet">
+    <link href="assets/css/style.css" rel="stylesheet">
+
+    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+</head>
+
+<body>
+    <div class="container">
+        <div class="row">
+            <div class="col temp">
+                <span id="current_temp">0</span><span style="font-size: 15px;"><%= tempSymbol %></span>&rarr;
+                <span id="set_temp">0</span><span style="font-size: 15px;"><%= tempSymbol %></span>
+                <hr />
+                <p style="font-size: 15px;">Regulated by: <span id="regulateType" style="font-weight: bold;">Startup</span></p>
+            </div>
+            <div class="col timer" id="timer"></div>
+        </div>
+        <div class="row">
+            <div class="col">
+                <label for="tmp">Set temperature (<%= tempName %>):</label>
+                <input type="number" class="form-control" id="tmp" value="50">
+                <hr />
+                <button class="btn btn-primary" type="button" id="setTemperature"><span
+                        class="fa fa-thermometer"></span>&nbsp;&nbsp;Set</button>
+            </div>
+            <div class="col">
+                <label for="tmr">Set timer (minutes):</label>
+                <input type="number" class="form-control" id="tmr" value="60">
+                <hr />
+                <button class="btn btn-primary" type="button" id="startTimer"><span
+                        class="fa fa-play"></span>&nbsp;&nbsp;Start</button>
+                <button class="btn btn-secondary" type="button" id="pauseTimer"><span
+                        class="fa fa-pause"></span>&nbsp;&nbsp;Pause</button>
+                <button class="btn btn-warning" type="button" id="resetTimer"><span
+                        class="fa fa-undo"></span>&nbsp;&nbsp;Reset</button>
+            </div>
+        </div>
+        <hr />
+        <canvas id="myChart"></canvas>
+        <hr />
+        <table class="table">
+            <thead class="thead-dark">
+                <tr>
+                    <th style="width:25%">Dish</th>
+                    <th style="width:10%">Type</th>
+                    <th style="width:10%">Temp.</th>
+                    <th style="width:35%">Time</th>
+                    <th style="width:5%">Run</th>
+                </tr>
+            </thead>
+            <tbody id="presets">
+            </tbody>
+        </table>
+    </div>
+
+
+    <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+    <script src="assets/js/jquery.min.js"></script>
+    <script src="assets/js/jquery-ui.js"></script>
+    <!-- Include all compiled plugins (below), or include individual files as needed -->
+    <script src="node_modules/bootstrap/dist/js/bootstrap.min.js"></script>
+    <script src="node_modules/socket.io-client/dist/socket.io.js"></script>
+    <script src="node_modules/chart.js/dist/Chart.bundle.min.js"></script>
+    <script>
+        function addData(chart, label, data) {
+            chart.data.labels.push(label);
+            chart.data.datasets.forEach((dataset) => {
+                dataset.data.push(data);
+            });
+            chart.update();
+        }
+
+        function pad(num) {
+            return ("0" + num).slice(-2);
+        }
+
+        function getTimeFromDate(timestamp) {
+            var date = new Date(timestamp * 1000);
+            var hours = date.getHours();
+            var minutes = date.getMinutes();
+            var seconds = date.getSeconds();
+            return pad(hours) + ":" + pad(minutes) + ":" + pad(seconds)
+        }
+
+        var socket = io('http://<%= host %>:7777');
+        socket.on('connect', function () {
+            console.log('connected')
+        });
+
+        socket.emit('conn', true);
+
+        $('#pauseTimer').hide();
+
+        $('#startTimer').on('click', () => {
+            var reqVal = $('#tmr').val();
+            var parAmt = parseInt(reqVal);
+
+            const totalAmount = parAmt * 60;
+
+            $('#tmr').val(0);
+            socket.emit('timer_start', totalAmount)
+            socket.emit('isPaused', false)
+        });
+
+        socket.on('timer_tick', (data) => {
+            if (data > 0) {
+                $('#startTimer').hide();
+                $('#pauseTimer').show();
+            } else {
+                $('#startTimer').show();
+                $('#pauseTimer').hide();
+            }
+            let minutes = parseInt(data / 60);
+            let seconds = parseInt(data % 60);
+
+            if (seconds < 10)
+                seconds = "0" + seconds;
+
+            $('#timer').text(minutes + ":" + seconds);
+        });
+
+        let pausedState = false;
+
+        $('#pauseTimer').on('click', () => {
+            if (pausedState == false) {
+                pausedState = true;
+                socket.emit('isPaused', true);
+                $('#pauseTimer').html('<span class="fa fa-play"></span>&nbsp;&nbsp;Unpause')
+            } else {
+                pausedState = false;
+                socket.emit('isPaused', false);
+                $('#pauseTimer').html('<span class="fa fa-pause"></span>&nbsp;&nbsp;Pause')
+            }
+        });
+
+        $('#resetTimer').on('click', () => {
+            $('#tmr').val(0);
+            socket.emit('do_reset', true);
+        });
+
+
+        $('#setTemperature').on('click', () => {
+            var val = $('#tmp').val();
+            socket.emit('setTemperature', val)
+        });
+
+        socket.on('tempData', (data) => {
+            $('#set_temp').text(data.idle);
+            $('#current_temp').text(data.current);
+        });
+
+        socket.on('relay_status', (data) => {
+            if (data) {
+                $('#current_temp').css('color', '#FF0000');
+            } else {
+                $('#current_temp').css('color', '#0C7BBE');
+            }
+        });
+
+        function showPresets(data, small) {
+            for (let i = 0; i < data.length; i++) {
+                const item = data[i];
+                if ('<%= tempMode %>' == 'C') {
+                    data[i].temperature = data[i].temperature[0]
+                } else {
+                    data[i].temperature = data[i].temperature[1]
+                }
+                const mid = (data[i].time[0] + data[i].time[1]) / 2;
+
+                if (small == true) {
+                    data[i].title = '<span style="font-size:12px">' + data[i].title + '</span>';
+                }
+
+                $('#presets').append(`
+                <tr>
+                    <td class="presetTitle">`+ data[i].title + `</td>
+                    <td>`+ data[i].type + `</td>
+                    <td>`+ data[i].temperature + `</td>
+                    <td>
+                        <input type="range" class="form-control-range slider" id="presetTime_`+ i + `" value="` + mid + `" min="` + data[i].time[0] + `" max="` + data[i].time[1] + `" oninput="$('#presetTimeNum_` + i + `').text(this.value)"/>
+                        <div class="container">
+                        <div class="row">
+                            <div class="col-4 tempRange" style="text-align:left">
+                                ` + data[i].time[0] + `
+                            </div>
+                            <div class="col-4" style="text-align:center">
+                                <span style="margin-top:-10px;" id="presetTimeNum_` + i + `">` + mid + `</span>
+                            </div>
+                            <div class="col-4 tempRange" style="text-align:right">
+                                ` + data[i].time[1] + `
+                            </div>
+                        </div>
+                        </div>
+                    </td>
+                    <td>
+                        <button class="form-control btn btn-success btn-sm startPreset" type="button" data-presetId="`+ i + `" data-temperature="` + data[i].temperature + `">Start</button>
+                    </td>
+                </tr>
+                `);
+            }
+        }
+
+        function getPresets() {
+            $.getJSON("api/getPresets", function (data) {
+                if ($(window).width() < 600) {
+                    showPresets(data, true)
+                } else {
+                    showPresets(data, false)
+                }
+            });
+        }
+
+        $(document).on('click', '.startPreset', function (e) {
+            const id = $(this).attr("data-presetId");
+            socket.emit('timer_start', $('#presetTime_' + id).val() * 60)
+            socket.emit('setTemperature', $(this).attr("data-temperature"));
+            socket.emit('isPaused', false)
+        });
+
+        var ctx = document.getElementById('myChart').getContext('2d');
+
+        // Start real-time temperature chart
+        $(function () {
+            var chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Temperature',
+                        backgroundColor: 'rgb(255, 99, 132)',
+                        borderColor: 'rgb(255, 99, 132)',
+                        data: []
+                    }]
+                },
+                options: {}
+            });
+            $.getJSON("api/getLog", function (data) {
+                for (let i = 0; i < data.length; i++) {
+                    addData(chart, new Date(data[i][0]).toLocaleTimeString("he-IL"), data[i][1])
+                }
+            });
+
+            socket.on('logUpdate', (data) => {
+                addData(chart, new Date(data[0]).toLocaleTimeString("he-IL"), data[1])
+            })
+
+            getPresets();
+        });
+
+        socket.on('presetChange', (data) => {
+            if ($(window).width() < 600) {
+                $('#presets').html(' ');
+                showPresets(data, true)
+            } else {
+                $('#presets').html(' ');
+                showPresets(data, false)
+            }
+        })
+
+        $(window).resize(function () {
+            $('#presets').html(' ');
+            getPresets()
+        });
+
+
+        socket.on('regulatedBy', (data) => {
+            if (data == 0) {
+                $('#regulateType').text('Startup');
+            } else {
+                $('#regulateType').text('Prediction');
+            }
+        })
+    </script>
+</body>
+
+</html>

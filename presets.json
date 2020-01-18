@@ -1,0 +1,20 @@
+[
+    {
+        "title":"Medium Rare Ribeye",
+        "type":"Beef",
+        "temperature":[50,122],
+        "time":[90,240]
+    },
+    {
+        "title":"Medium Ribeye",
+        "type":"Beef",
+        "temperature":[65,122],
+        "time":[90,240]
+    },
+    {
+        "title":"Test",
+        "type":"Test",
+        "temperature":[35,70],
+        "time":[90,240]
+    }
+]
