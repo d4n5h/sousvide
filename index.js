@@ -176,72 +176,92 @@ fs.readFile('./conf.json', async (err, config) => {
 
     // Temperature loop
     function checkTemp() {
-        if (countLogEmit >= 9 && clnt != null) {
-            log.push([Date.now(), currentTemp]);
-            predictionLog.push(currentTemp);
-            clnt.emit('logUpdate', [Date.now(), currentTemp]);
-            clnt.broadcast.emit('logUpdate', [Date.now(), currentTemp]);
-            countLogEmit = 0;
-        }
-        if (clnt != null) {
-            clnt.emit('tempData', {
-                idle: idleTemp,
-                current: currentTemp
-            });
-            clnt.broadcast.emit('tempData', {
-                idle: idleTemp,
-                current: currentTemp
-            });
-        }
 
-        if (predictionLog.length > 30) {
+        // Fail safe. If under 5c or above 100c then close the relay
+        if (currentTemp <= 5 || currentTemp > 100) {
             if (clnt != null) {
-                clnt.emit('regulatedBy', 1);
-                clnt.broadcast.emit('regulatedBy', 1);
+                clnt.emit('relay_status', false);
+                clnt.broadcast.emit('relay_status', false);
             }
-            let predictions = predict(predictionLog.slice(Math.max(predictionLog.length - 30, 1)), 30);
-            predictions = predictions.slice(Math.max(predictions.length - 30, 1));
-            const min = Math.min(predictions);
-            const max = predictions.max();
-            if (max > Number(idleTemp - 0.5) && timer > 0) {
-                if (clnt != null) {
-                    clnt.emit('relay_status', false);
-                    clnt.broadcast.emit('relay_status', false);
-                }
-                if (rly != null) {
-                    rly.off()
-                }
-            } else if (max < Number(idleTemp + 0.5) && timer > 0) {
-                if (clnt != null) {
-                    clnt.emit('relay_status', true);
-                    clnt.broadcast.emit('relay_status', true);
-                }
-
-                if (rly != null) {
-                    rly.on()
-                }
+            if (rly != null) {
+                rly.off()
             }
         } else {
-            if (currentTemp < idleTemp && timer > 0) {
+            // Send update log every 10 senconds
+            if (countLogEmit >= 9 && clnt != null) {
+                log.push([Date.now(), currentTemp]);
+                predictionLog.push(currentTemp);
+                clnt.emit('logUpdate', [Date.now(), currentTemp]);
+                clnt.broadcast.emit('logUpdate', [Date.now(), currentTemp]);
+                countLogEmit = 0;
+            }
+            // Send temperature to client
+            if (clnt != null) {
+                clnt.emit('tempData', {
+                    idle: idleTemp,
+                    current: currentTemp
+                });
+                clnt.broadcast.emit('tempData', {
+                    idle: idleTemp,
+                    current: currentTemp
+                });
+            }
+            const windowSize = 6;
+            // Start regulating temperature by prediction when we have a log history of at least 5 minutes
+            if (predictionLog.length > windowSize) {
+                // Send regulation type to client
                 if (clnt != null) {
-                    clnt.emit('relay_status', true);
-                    clnt.broadcast.emit('relay_status', true);
+                    // By prediction
+                    clnt.emit('regulatedBy', 1);
+                    clnt.broadcast.emit('regulatedBy', 1);
+                } else {
+                    // Startup
+                    clnt.emit('regulatedBy', 0);
+                    clnt.broadcast.emit('regulatedBy', 0);
                 }
+                let predictions = predict(predictionLog.slice(Math.max(predictionLog.length - windowSize, 1)), windowSize);
+                predictions = predictions.slice(Math.max(predictions.length - windowSize, 1));
+                const max = predictions.max();
+                if (max > Number(idleTemp - 0.5) && timer > 0) {
+                    if (clnt != null) {
+                        clnt.emit('relay_status', false);
+                        clnt.broadcast.emit('relay_status', false);
+                    }
+                    if (rly != null) {
+                        rly.off()
+                    }
+                } else if (max < Number(idleTemp + 0.5) && timer > 0) {
+                    if (clnt != null) {
+                        clnt.emit('relay_status', true);
+                        clnt.broadcast.emit('relay_status', true);
+                    }
 
-                if (rly != null) {
-                    rly.on()
+                    if (rly != null) {
+                        rly.on()
+                    }
                 }
-
             } else {
-                if (clnt != null) {
-                    clnt.emit('relay_status', false);
-                    clnt.broadcast.emit('relay_status', false);
-                }
-                if (rly != null) {
-                    rly.off()
+                // Regulate by startup (first 5 minutes)
+                if (currentTemp < idleTemp && timer > 0) {
+                    if (clnt != null) {
+                        clnt.emit('relay_status', true);
+                        clnt.broadcast.emit('relay_status', true);
+                    }
+                    if (rly != null) {
+                        rly.on()
+                    }
+                } else {
+                    if (clnt != null) {
+                        clnt.emit('relay_status', false);
+                        clnt.broadcast.emit('relay_status', false);
+                    }
+                    if (rly != null) {
+                        rly.off()
+                    }
                 }
             }
         }
+
         countLogEmit++;
         setTimeout(() => {
             checkTemp();
